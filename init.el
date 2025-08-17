@@ -39,11 +39,13 @@
 
 
 (set-frame-font "FiraCode Nerd Font 16" nil t)
+(add-to-list 'default-frame-alist '(font . "FiraCode Nerd Font-16"))
 
 ;; (add-to-list 'major-mode-remap-alist
-;;              '(c-mode . c-ts-mode)
-;; 			 '(rust-mode . rust-ts-mode)
-;; 			 '(python-mode . python-ts-mode))
+;; 			 '(lua-mode . lua-ts-mode))
+             ;; '(c-mode . c-ts-mode)
+			 ;; '(rust-mode . rust-ts-mode)
+			 ;; '(python-mode . python-ts-mode))
 
 
 ;; Elpaca ===================
@@ -93,6 +95,21 @@
 
 ;; Packages ====================
 
+(defvar my/keymap (make-keymap)
+  "Keymap for my/mode")
+
+(define-minor-mode my/mode
+  "Minor mode for my personal keybindings."
+  :init-value t
+  :global t
+  :keymap my/keymap)
+
+;; The keymaps in `emulation-mode-map-alists' take precedence over
+;; `minor-mode-map-alist'
+(add-to-list 'emulation-mode-map-alists
+             `((my/mode . ,my/keymap)))
+
+
 ;; Uses lexical binding to work.
 (defun make-interactive (fn &rest args)
   (lambda ()
@@ -120,7 +137,7 @@
 	(setq centaur-tabs-icon-type 'all-the-icons) ; or 'nerd-icons
 	(setq centaur-tabs-set-icons t)
 	(dolist (k '(1 2 3 4 5 6 7 8 9))
-	  (evil-define-key 'normal 'global
+	  (evil-define-key 'normal my/keymap
 		(kbd (format "C-%d" k)) (make-interactive 'centaur-tabs-select-visible-nth-tab k)))
 	))
 
@@ -134,13 +151,21 @@
   :config
   (progn
 	(evil-mode 1)
+	(setq evil-shift-width 4)
+	(setq evil-kill-on-visual-paste nil) ; don't replace clipboard on paste in visual mode
 	(evil-define-key '(normal visual) 'global
 	  ";" 'evilnc-comment-or-uncomment-lines)
-	(evil-define-key 'normal 'global
+	(evil-define-key 'normal my/keymap
 	  (kbd "C-<f11>") 'toggle-frame-fullscreen
 	  (kbd "C-q") (make-interactive 'kill-this-buffer)
 	  (kbd "SPC s") 'save-buffer
 	  (kbd "SPC i i") (make-interactive 'find-file "~/.config/emacs/init.el"))
+	;; Pasted from https://github.com/emacs-evil/evil/issues/1466#issuecomment-848638880
+	(evil-define-operator black-hole-delete (beg end type)
+	  "Delete text without saving it to the kill ring."
+	  (interactive "<R>")
+	  (evil-delete beg end type ?_))
+	(evil-define-key 'normal my/keymap "d" 'black-hole-delete)
 	))
 
 (use-package evil-collection
@@ -192,12 +217,16 @@
 	(setq vterm-shell "/opt/homebrew/bin/fish")
 	(evil-define-key '(insert normal) vterm-mode-map
 	  (kbd "<f7>") 'hide-vterm)
-	(evil-define-key 'normal 'global
+	(evil-define-key 'normal my/keymap
 	  (kbd "<f7>") (lambda ()
 					 (interactive)
 					 (if --vterm-visibility
 						(hide-vterm)
-						(open-custom-vterm))))))
+					   (open-custom-vterm))))))
+
+(defvar --vterm-visibility nil
+	"Variable to track the visibility of the vterm buffer.
+	When non-nil, the vterm buffer is visible; otherwise, it is hidden.")
 
 (defun hide-vterm ()
   "Hide the vterm buffer."
@@ -225,19 +254,34 @@
 					(setq --vterm-visibility nil)
 					(delete-window))
 				  nil t) ;; Local to this buffer
+
+		;; Somehow both of these are needed to disable hl-line-mode
+		;; see https://www.reddit.com/r/emacs/comments/nqp1ww/comment/i0skrov/?utm_source=share&utm_medium=web3x&utm_name=web3xcss&utm_term=1&utm_content=share_button
+		(setq-local global-hl-line-mode nil)
+		(hl-line-mode -1)
+
 		(vterm-send-string cmd)
 		(centaur-tabs-local-mode)))
 	;; Split window and switch to vterm buffer
 	(split-window-below -15)
 	(other-window 1)
-    (switch-to-buffer buffer)
+	(switch-to-buffer buffer)
 	(setq --vterm-visibility t)))
-
 
 ;; Language support
 
+(use-package lua-mode
+  :ensure t
+  :config
+  (setq lua-indent-level 4))
+
 (use-package rust-mode
   :ensure t)
+
+(use-package fish-mode
+  :ensure t
+  :config
+  (setq fish-indent-offset 4))
 
 (use-package lsp-mode
   :init
@@ -248,10 +292,14 @@
 
   :hook (;; replace XXX-mode with concrete major-mode(e. g. python-mode)
 		 ;; (python-mode . lsp)
+		 (lua-mode . lsp)
 		 (rust-mode . lsp)
          ;; if you want which-key integration
          (lsp-mode . lsp-enable-which-key-integration))
-  :commands lsp)
+  :commands lsp
+  :config
+  (setq lsp-clients-lua-language-server-bin "/opt/homebrew/bin/lua-language-server")
+  (setq lsp-clients-lua-language-server-main-location "/opt/homebrew/opt/lua-language-server/libexec/main.lua"))
 
 (use-package lsp-pyright
   :ensure t
@@ -266,13 +314,13 @@
   :after (lsp-ui evil)
   :config
   (progn
-	(setq lsp-ui-sideline-show-code-actions t)
+	;; (setq lsp-ui-sideline-show-code-actions t)
 	(setq lsp-ui-doc-show-with-mouse nil)
 	(setq lsp-ui-doc-position 'bottom)
-	(evil-define-key 'insert 'global
+	(evil-define-key 'insert my/keymap
 	  (kbd "C-j") 'lsp-signature-next
 	  (kbd "C-k") 'lsp-signature-previous)
-	(evil-define-key 'normal 'global
+	(evil-define-key 'normal my/keymap
 	  (kbd "C-s") 'lsp-ivy-workspace-symbol
 	  (kbd "K") 'lsp-ui-doc-glance
 	  (kbd "g h") 'lsp-ui-doc-toggle
@@ -301,8 +349,8 @@
   ;; for treemacs users
   ;; (doom-themes-treemacs-theme "doom-atom") ; use "doom-colors" for less minimal icon theme
   :config
-  ;; (load-theme 'doom-tomorrow-night t)
-  (load-theme 'doom-gruvbox t)
+  (load-theme 'doom-tomorrow-night t)
+  ;; (load-theme 'doom-gruvbox t)
 
   ;; Enable flashing mode-line on errors
   (doom-themes-visual-bell-config)
@@ -329,7 +377,7 @@
   (projectile-mode +1)
   :config
   (progn
-	(evil-define-key 'normal 'global
+	(evil-define-key 'normal my/keymap
 	  (kbd "SPC p") 'projectile-command-map)))
 
 (use-package neotree
@@ -341,7 +389,7 @@
 	(setq neo-window-width 25)
 	(setq neo-show-hidden-files t)
 	(setq neo-theme (if (display-graphic-p) 'nerd-icons 'arrow))
-	(evil-define-key 'normal 'global
+	(evil-define-key 'normal my/keymap
 	  (kbd "SPC d") 'neotree-toggle
 	  (kbd "SPC p n") 'neotree-projectile-action)
 	(evil-define-key 'normal neotree-mode-map
@@ -378,5 +426,12 @@
 					(setq-local copilot--indent-warning-printed-p t)))
   :config
   (progn
-	(evil-define-key 'insert 'global
+	(evil-define-key 'insert my/keymap
 	  (kbd "C-=") 'copilot-accept-completion)))
+
+(use-package csv-mode
+  :ensure t
+  :config
+  (progn
+	(setq csv-separators '("," ";" "|" " " "\t"))
+	(setq csv-header-lines 1)))
